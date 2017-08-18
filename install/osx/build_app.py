@@ -18,6 +18,7 @@ from subprocess import check_output, call, STDOUT
 from collections import namedtuple
 from shutil import copy, copytree, rmtree
 from os import makedirs, rename, walk, path as ospath
+import os
 import plistlib
 
 import argparse
@@ -160,6 +161,11 @@ info["OBSFeedsURL"] = '{0}/feeds.xml'.format(args.base_url)
 app_name = info["CFBundleName"]+".app"
 icon_file = "tmp/Contents/Resources/%s"%info["CFBundleIconFile"]
 
+if os.path.exists('tmp') and os.path.isdir('tmp'):
+	rmtree("tmp")
+if os.path.exists('OBS.app') and os.path.isdir('OBS.app'):
+	rmtree('OBS.app')
+
 copytree(build_path, "tmp/Contents/Resources/", symlinks=True)
 copy(icon_path, icon_file)
 plistlib.writePlist(info, "tmp/Contents/Info.plist")
@@ -176,8 +182,8 @@ if args.sparkle is not None:
 prefix = "tmp/Contents/Resources/"
 sparkle_path = '@loader_path/{0}/Frameworks/Sparkle.framework/Versions/A/Sparkle'
 
-cmd('{0}install_name_tool -change {1} {2} {3}/bin/obs'.format(
-    args.prefix, actual_sparkle_path, sparkle_path.format('../..'), prefix))
+#cmd('{0}install_name_tool -change {1} {2} {3}/bin/obs'.format(
+#    args.prefix, actual_sparkle_path, sparkle_path.format('../..'), prefix))
 
 
 ####################################################################################### copy dependencies & modify changes
