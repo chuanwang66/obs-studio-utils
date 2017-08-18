@@ -12,14 +12,9 @@ blacklist = """/usr /System""".split()
 #copied
 whitelist = """/usr/local""".split()
  
-#
-#
-#
- 
- 
 from sys import argv
 from glob import glob
-from subprocess import check_output, call
+from subprocess import check_output, call, STDOUT
 from collections import namedtuple
 from shutil import copy, copytree, rmtree
 from os import makedirs, rename, walk, path as ospath
@@ -46,7 +41,6 @@ def cmd(cmd):
 LibTarget = namedtuple("LibTarget", ("path", "external", "copy_as"))
  
 inspect = list()
- 
 inspected = set()
  
 build_path = args.dir
@@ -63,23 +57,27 @@ def add(name, external=False, copy_as=None):
 	inspect.append(t)
 	inspected.add(t)
 
-
+###################################################################################### look up for .so & .dylib
 for i in candidate_paths:
 	print("Checking " + i)
 	for root, dirs, files in walk(build_path+"/"+i):
 		for file_ in files:
 			path = root + "/" + file_
 			try:
-				out = check_output("{0}otool -L '{1}'".format(args.prefix, path), shell=True,
-						universal_newlines=True)
-				if "is not an object file" in out:
+				out = check_output("{0}otool -L '{1}'; exit 0".format(args.prefix, path), shell=True, universal_newlines=True, stderr=STDOUT)
+				if "not recognized as a valid object file" in out:
 					continue
-			except:
+				if "The end of the file was unexpectedly encountered" in out:
+					continue
+				if "not an object file" in out:
+					continue
+			except Exception as e:
 				pass
 			rel_path = path[len(build_path)+1:]
 			print(repr(path), repr(rel_path))
 			add(rel_path)
- 
+print("\n")
+
 def add_plugins(path, replace):
 	for img in glob(path.replace(
 		"lib/QtCore.framework/Versions/5/QtCore",
@@ -92,14 +90,14 @@ def add_plugins(path, replace):
 
 actual_sparkle_path = '@loader_path/Frameworks/Sparkle.framework/Versions/A/Sparkle'
 
+####################################################################################### inspect; generate changes
 while inspect:
 	target = inspect.pop()
 	print("inspecting", repr(target))
 	path = target.path
 	if path[0] == "@":
 		continue
-	out = check_output("{0}otool -L '{1}'".format(args.prefix, path), shell=True,
-			universal_newlines=True)
+	out = check_output("{0}otool -L '{1}'; exit 0".format(args.prefix, path), shell=True, universal_newlines=True, stderr=STDOUT)
  
 	if "QtCore" in path:
 		add_plugins(path, "platforms")
@@ -127,6 +125,7 @@ while inspect:
 			if blacklisted:
 				continue
 		add(new, True)
+print("\n")
 
 changes = list()
 for path, external, copy_as in inspected:
@@ -134,14 +133,17 @@ for path, external, copy_as in inspected:
 		continue #built with install_rpath hopefully
 	changes.append("-change '%s' '@rpath/%s'"%(path, copy_as))
 changes = " ".join(changes)
+print("changes==>", changes)
 
+####################################################################################### generate app bundle
 info = plistlib.readPlist(plist_path)
 
-latest_tag = cmd('git describe --tags --abbrev=0')
-log = cmd('git log --pretty=oneline {0}...HEAD'.format(latest_tag))
+#latest_tag = cmd('git describe --tags --abbrev=0')
+#log = cmd('git log --pretty=oneline {0}...HEAD'.format(latest_tag))
 
 from os import path
 # set version
+"""
 if args.stable:
     info["CFBundleVersion"] = latest_tag
     info["CFBundleShortVersionString"] = latest_tag
@@ -153,6 +155,7 @@ else:
 
 info["SUPublicDSAKeyFile"] = path.basename(args.public_key)
 info["OBSFeedsURL"] = '{0}/feeds.xml'.format(args.base_url)
+"""
 
 app_name = info["CFBundleName"]+".app"
 icon_file = "tmp/Contents/Resources/%s"%info["CFBundleIconFile"]
@@ -177,7 +180,7 @@ cmd('{0}install_name_tool -change {1} {2} {3}/bin/obs'.format(
     args.prefix, actual_sparkle_path, sparkle_path.format('../..'), prefix))
 
 
-
+####################################################################################### copy dependencies & modify changes
 for path, external, copy_as in inspected:
 	id_ = ""
 	filename = path
